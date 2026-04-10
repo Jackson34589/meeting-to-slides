@@ -59,8 +59,8 @@ def print_cost_summary(entry: dict) -> None:
 
     print("\n=== COST SUMMARY ===")
     print(f"Step: {entry['step']}")
-    print(f"Input tokens:  {entry['input_tokens']:>7,}  → ${input_cost:.3f}")
-    print(f"Output tokens: {entry['output_tokens']:>7,}  → ${output_cost:.3f}")
+    print(f"Input tokens:  {entry['input_tokens']:>7,}  -> ${input_cost:.3f}")
+    print(f"Output tokens: {entry['output_tokens']:>7,}  -> ${output_cost:.3f}")
     print(f"Total this run:        ${entry['cost_usd']:.3f}")
     print("====================\n")
 

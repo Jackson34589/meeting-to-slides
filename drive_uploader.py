@@ -1,6 +1,7 @@
 """
 drive_uploader.py — Calls the Google Drive API to upload the presentation
 to a specified folder and share it (make it readable by anyone with the link).
+Falls back to a mock response when Google credentials are unavailable.
 """
 
 import os
@@ -13,6 +14,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+_PLACEHOLDER_PATHS = {"credentials.json", "your_credentials.json", ""}
+
+
+def _credentials_available() -> bool:
+    """Return True if a real Google credentials file exists on disk."""
+    path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+    return path not in _PLACEHOLDER_PATHS and os.path.exists(path)
+
+
+def _mock_upload_and_share(presentation_id: str) -> str:
+    """
+    Simulate a successful Google Drive upload and share without real credentials.
+    Returns a realistic-format (but non-functional) Google Slides shareable link.
+    """
+    mock_link = f"https://docs.google.com/presentation/d/{presentation_id}/edit?usp=sharing"
+    folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "your_drive_folder_id")
+
+    print("[MOCK] Google Drive API call skipped — simulating upload and share.")
+    print(f"[MOCK] Presentation ID : {presentation_id}")
+    print(f"[MOCK] Target folder   : {folder_id}")
+    print(f"[MOCK] Permissions set : anyone with link -> viewer")
+    print(f"[MOCK] Shareable link  : {mock_link}")
+    return mock_link
 
 
 def _get_drive_service():
@@ -95,8 +119,11 @@ def share_publicly(presentation_id: str) -> str:
 def upload_and_share(presentation_id: str) -> str:
     """
     Full pipeline: move the presentation to the configured Drive folder and make it publicly readable.
-    Returns the shareable link.
+    Returns the shareable link. Falls back to a mock if credentials are unavailable.
     """
+    if not _credentials_available():
+        return _mock_upload_and_share(presentation_id)
+
     folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
     if not folder_id:
         raise EnvironmentError(

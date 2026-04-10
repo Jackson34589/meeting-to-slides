@@ -1,9 +1,11 @@
 """
 slides_generator.py — Calls the Google Slides API to create a presentation
 from the structured JSON output produced by ai_processor.py.
+Falls back to a mock response when Google credentials are unavailable.
 """
 
 import os
+import uuid
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -13,6 +15,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SCOPES = ["https://www.googleapis.com/auth/presentations"]
+_PLACEHOLDER_PATHS = {"credentials.json", "your_credentials.json", ""}
+
+
+def _credentials_available() -> bool:
+    """Return True if a real Google credentials file exists on disk."""
+    path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+    return path not in _PLACEHOLDER_PATHS and os.path.exists(path)
+
+
+def _mock_create_presentation(structured_data: dict, title: str) -> str:
+    """
+    Simulate a successful Google Slides API call without real credentials.
+    Generates a realistic presentation ID and prints a summary of the slides content.
+    """
+    presentation_id = uuid.uuid4().hex[:44].upper()
+    # Pad to match real Google Slides ID length (~44 alphanumeric chars)
+    presentation_id = (presentation_id + uuid.uuid4().hex)[:44]
+
+    print("[MOCK] Google Slides API call skipped — simulating presentation creation.")
+    print(f"[MOCK] Title     : {title}")
+    print(f"[MOCK] Slides    : 5 (Title, Executive Summary, Objectives, Action Items, Next Steps)")
+    print(f"[MOCK] Slide 1 — Title: {title}")
+    print(f"[MOCK] Slide 2 — Executive Summary: {structured_data.get('executive_summary', '')[:80]}...")
+    print(f"[MOCK] Slide 3 — Objectives ({len(structured_data.get('objectives', []))} items):")
+    for obj in structured_data.get("objectives", []):
+        print(f"         * {obj}")
+    print(f"[MOCK] Slide 4 — Action Items ({len(structured_data.get('action_items', []))} items):")
+    for item in structured_data.get("action_items", []):
+        print(f"         * {item}")
+    print(f"[MOCK] Slide 5 — Next Steps: {structured_data.get('next_steps', '')[:80]}...")
+    print(f"[MOCK] Presentation ID: {presentation_id}")
+    return presentation_id
 
 
 def _get_slides_service():
@@ -40,7 +74,11 @@ def create_presentation(structured_data: dict, title: str = "Meeting Summary") -
     """
     Create a Google Slides presentation from structured meeting data.
     Returns the presentation ID of the newly created file.
+    Falls back to a mock if Google credentials are unavailable.
     """
+    if not _credentials_available():
+        return _mock_create_presentation(structured_data, title)
+
     service = _get_slides_service()
 
     try:
