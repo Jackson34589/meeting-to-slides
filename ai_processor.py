@@ -1,0 +1,109 @@
+"""
+ai_processor.py — Calls the Claude API (claude-sonnet-4-6) to process a meeting transcript
+and returns structured JSON with executive summary, objectives, action items, and next steps.
+Measures and logs token usage and cost on every call.
+"""
+
+import json
+import os
+
+import anthropic
+from dotenv import load_dotenv
+
+from cost_tracker import log_api_call
+
+load_dotenv()
+
+MODEL = "claude-sonnet-4-6"
+
+SYSTEM_PROMPT = """You are an expert meeting facilitator and business analyst.
+Your task is to analyze a meeting transcript and extract key information in a structured JSON format.
+Always respond with valid JSON only — no markdown, no explanation, just the raw JSON object."""
+
+USER_PROMPT_TEMPLATE = """Analyze the following meeting transcript and return a JSON object with this exact structure:
+
+{{
+  "executive_summary": "A concise 2-3 sentence summary of the entire meeting",
+  "objectives": [
+    "High-level objective 1",
+    "High-level objective 2",
+    "High-level objective 3"
+  ],
+  "action_items": [
+    "Specific actionable item 1 (owner: Name)",
+    "Specific actionable item 2 (owner: Name)",
+    "Specific actionable item 3 (owner: Name)"
+  ],
+  "next_steps": "Brief paragraph describing what happens after this meeting"
+}}
+
+TRANSCRIPT:
+{transcript}"""
+
+
+def process_transcript(transcript: str) -> dict:
+    """
+    Send the transcript to Claude and return parsed structured JSON.
+    Logs token usage and cost via cost_tracker after the call.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise EnvironmentError(
+            "ANTHROPIC_API_KEY not found in environment. Check your .env file."
+        )
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    prompt = USER_PROMPT_TEMPLATE.format(transcript=transcript)
+
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.AuthenticationError as e:
+        raise PermissionError(f"Claude API authentication failed: {e}") from e
+    except anthropic.RateLimitError as e:
+        raise RuntimeError(f"Claude API rate limit exceeded: {e}") from e
+    except anthropic.APIError as e:
+        raise RuntimeError(f"Claude API error during transcript processing: {e}") from e
+
+    input_tokens = response.usage.input_tokens
+    output_tokens = response.usage.output_tokens
+
+    log_api_call(
+        step="summarization",
+        model=MODEL,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+    raw_text = response.content[0].text.strip()
+
+    try:
+        structured = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Claude returned invalid JSON. Raw response:\n{raw_text}\nError: {e}"
+        ) from e
+
+    _validate_structure(structured)
+    return structured
+
+
+def _validate_structure(data: dict) -> None:
+    """Validate that the Claude response contains all required fields."""
+    required_keys = ["executive_summary", "objectives", "action_items", "next_steps"]
+    missing = [k for k in required_keys if k not in data]
+    if missing:
+        raise ValueError(
+            f"Claude response missing required fields: {missing}. Got: {list(data.keys())}"
+        )
+
+    if not isinstance(data["objectives"], list) or len(data["objectives"]) < 1:
+        raise ValueError("'objectives' must be a non-empty list.")
+
+    if not isinstance(data["action_items"], list) or len(data["action_items"]) < 1:
+        raise ValueError("'action_items' must be a non-empty list.")
